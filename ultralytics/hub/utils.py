@@ -1,8 +1,8 @@
-# Ultralytics 🚀 AGPL-3.0 License - https://ultralytics.com/license
+# Ultralytics YOLO 🚀, AGPL-3.0 license
 
-import os
 import platform
 import random
+import sys
 import threading
 import time
 from pathlib import Path
@@ -10,11 +10,7 @@ from pathlib import Path
 import requests
 
 from ultralytics.utils import (
-    ARGV,
     ENVIRONMENT,
-    IS_COLAB,
-    IS_GIT_DIR,
-    IS_PIP_PACKAGE,
     LOGGER,
     ONLINE,
     RANK,
@@ -25,11 +21,11 @@ from ultralytics.utils import (
     __version__,
     colorstr,
     get_git_origin_url,
+    is_colab,
+    is_git_dir,
+    is_pip_package,
 )
 from ultralytics.utils.downloads import GITHUB_ASSETS_NAMES
-
-HUB_API_ROOT = os.environ.get("ULTRALYTICS_HUB_API", "https://api.ultralytics.com")
-HUB_WEB_ROOT = os.environ.get("ULTRALYTICS_HUB_WEB", "https://hub.ultralytics.com")
 
 PREFIX = colorstr("Ultralytics HUB: ")
 HELP_MSG = "If this issue persists please visit https://github.com/ultralytics/hub/issues for assistance."
@@ -48,29 +44,30 @@ def request_with_credentials(url: str) -> any:
     Raises:
         OSError: If the function is not run in a Google Colab environment.
     """
-    if not IS_COLAB:
+    if not is_colab():
         raise OSError("request_with_credentials() must run in a Colab environment")
     from google.colab import output  # noqa
     from IPython import display  # noqa
 
     display.display(
         display.Javascript(
-            f"""
-            window._hub_tmp = new Promise((resolve, reject) => {{
+            """
+            window._hub_tmp = new Promise((resolve, reject) => {
                 const timeout = setTimeout(() => reject("Failed authenticating existing browser session"), 5000)
-                fetch("{url}", {{
+                fetch("%s", {
                     method: 'POST',
                     credentials: 'include'
-                }})
+                })
                     .then((response) => resolve(response.json()))
-                    .then((json) => {{
+                    .then((json) => {
                     clearTimeout(timeout);
-                    }}).catch((err) => {{
+                    }).catch((err) => {
                     clearTimeout(timeout);
                     reject(err);
-                }});
-            }});
+                });
+            });
             """
+            % url
         )
     )
     return output.eval_js("_hub_tmp")
@@ -83,7 +80,7 @@ def requests_with_progress(method, url, **kwargs):
     Args:
         method (str): The HTTP method to use (e.g. 'GET', 'POST').
         url (str): The URL to send the request to.
-        **kwargs (any): Additional keyword arguments to pass to the underlying `requests.request` function.
+        **kwargs (dict): Additional keyword arguments to pass to the underlying `requests.request` function.
 
     Returns:
         (requests.Response): The response object from the HTTP request.
@@ -121,7 +118,7 @@ def smart_request(method, url, retry=3, timeout=30, thread=True, code=-1, verbos
         code (int, optional): An identifier for the request, used for logging purposes. Default is -1.
         verbose (bool, optional): A flag to determine whether to print out to console or not. Default is True.
         progress (bool, optional): Whether to show a progress bar during the request. Default is False.
-        **kwargs (any): Keyword arguments to be passed to the requests function specified in method.
+        **kwargs (dict): Keyword arguments to be passed to the requests function specified in method.
 
     Returns:
         (requests.Response): The HTTP response object. If the request is executed in a separate thread, returns None.
@@ -170,7 +167,7 @@ def smart_request(method, url, retry=3, timeout=30, thread=True, code=-1, verbos
 class Events:
     """
     A class for collecting anonymous event analytics. Event analytics are enabled when sync=True in settings and
-    disabled when sync=False. Run 'yolo settings' to see and update settings.
+    disabled when sync=False. Run 'yolo settings' to see and update settings YAML file.
 
     Attributes:
         url (str): The URL to send anonymous events.
@@ -184,11 +181,11 @@ class Events:
     def __init__(self):
         """Initializes the Events object with default values for events, rate_limit, and metadata."""
         self.events = []  # events list
-        self.rate_limit = 30.0  # rate limit (seconds)
+        self.rate_limit = 60.0  # rate limit (seconds)
         self.t = 0.0  # rate limit timer (seconds)
         self.metadata = {
-            "cli": Path(ARGV[0]).name == "yolo",
-            "install": "git" if IS_GIT_DIR else "pip" if IS_PIP_PACKAGE else "other",
+            "cli": Path(sys.argv[0]).name == "yolo",
+            "install": "git" if is_git_dir() else "pip" if is_pip_package() else "other",
             "python": ".".join(platform.python_version_tuple()[:2]),  # i.e. 3.10
             "version": __version__,
             "env": ENVIRONMENT,
@@ -197,10 +194,10 @@ class Events:
         }
         self.enabled = (
             SETTINGS["sync"]
-            and RANK in {-1, 0}
+            and RANK in (-1, 0)
             and not TESTS_RUNNING
             and ONLINE
-            and (IS_PIP_PACKAGE or get_git_origin_url() == "https://github.com/ultralytics/ultralytics.git")
+            and (is_pip_package() or get_git_origin_url() == "https://github.com/ultralytics/ultralytics.git")
         )
 
     def __call__(self, cfg):
